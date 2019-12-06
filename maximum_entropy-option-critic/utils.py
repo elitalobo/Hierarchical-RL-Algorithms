@@ -10,7 +10,6 @@ except:
     pass
 import numpy as np
 import argparse
-from running_state  import ZFilter
 # import matplotlib
 import json
 from multiprocessing import Pool
@@ -18,15 +17,22 @@ from multiprocessing import Pool
 
 #matplotlib.use('agg')
 import torch.multiprocessing
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+
+from datetime import datetime
 
 
-import torch
-# from matplotlib import pyplot as plt
-
-from pykeops.torch import LazyTensor
-
-use_cuda = torch.cuda.is_available()
-
+# def softmax(values, temp=0.3):
+#     if len(values.shape)==1:
+#         values = values.reshape(-1,values.shape[0])
+#
+#     if values.shape[-1]==1:
+#         return torch.zeros_like(values), torch.ones_like(values)
+#     actual_values=values
+#     values = values - torch.max(actual_values,-1)[0].reshape(-1,1)
+#     values = values / temp
+#     probs = F.softmax(values,dim=-1)
+#     selected = torch.multinomial(probs,num_samples=1)
 #     return selected, probs
 def softmax(values, temp=0.3):
     values = values / temp
@@ -150,8 +156,7 @@ def softmax_loss_vectorized(X, y):
 
     return torch.mean(loss);
 
-def inverse_tanh(y,epsilon=1e-9):
-    assert(torch.sum(torch.tanh(0.5 * torch.log(((1+y+epsilon)/(1-y+epsilon))+epsilon))-y<0.001)>y.shape[0])
+def inverse_tanh(y,epsilon=1e-6):
     return 0.5 * torch.log(((1+y+epsilon)/(1-y+epsilon))+epsilon)
 
 
@@ -186,54 +191,14 @@ def get_vector(num, len, order):
     vec.reverse()
     return np.array(vec)
 
-import time
-
-def Kmeans(x, K=10, Niter=10000, verbose=True,c=None):
-    N, D = x.shape  # Number of samples, dimension of the ambient space
-
-    # K-means loop:
-    # - x  is the point cloud,
-    # - cl is the vector of class labels
-    # - c  is the cloud of cluster centroids
-    start = time.time()
-    if c is None:
-        c = x[:K, :].clone()  # Simplistic random initialization
-    x_i = LazyTensor(x[:, None, :])  # (Npoints, 1, D)
-
-    for i in range(Niter):
-
-        c_j = LazyTensor(c[None, :, :])  # (1, Nclusters, D)
-        D_ij = ((x_i - c_j) ** 2).sum(-1)  # (Npoints, Nclusters) symbolic matrix of squared distances
-        cl = D_ij.argmin(dim=1).long().view(-1)  # Points -> Nearest cluster
-
-        Ncl = torch.bincount(cl) # Class weights
-        for d in range(D):  # Compute the cluster centroids with torch.bincount:
-            c[:, d] = torch.bincount(cl, weights=x[:, d]) / Ncl.float()
-
-    end = time.time()
-
-    if verbose:
-        print("K-means example with {:,} points in dimension {:,}, K = {:,}:".format(N, D, K))
-        print('Timing for {} iterations: {:.5f}s = {} x {:.5f}s\n'.format(
-                Niter, end - start, Niter, (end-start) / Niter))
-
-    return cl, c
 
 def initialize_fourier_vector(order, num_features):
     fourier_vector = np.zeros((np.power((order + 1), (num_features)), num_features))
     lent = fourier_vector.shape[0]
-
+    # print(lent)
     for cnt in np.arange(lent):
         fourier_vector[cnt] = get_vector(cnt, num_features, order + 1)
     return fourier_vector
-
-def evaluate_fourier(fourier_vector, features, state_limit):
-    features = features.reshape(1, -1)
-    features = normalize_state(features, state_limit)
-    req = np.array(features)
-
-    evaluated_fourier = np.cos((np.matmul(fourier_vector, req.transpose())).transpose() * np.pi)
-    np.apply_along_axis(apply_reshape, 1, evaluated_fourier)
 
 
 def apply_reshape(arr):
@@ -253,6 +218,13 @@ def normalize_state(state, state_limit):
     return state
 
 
+def evaluate_fourier(fourier_vector, features, state_limit):
+    features = features.reshape(1, -1)
+    features = normalize_state(features, state_limit)
+    req = np.array(features)
+
+    evaluated_fourier = np.cos((np.matmul(fourier_vector, req.transpose())).transpose() * np.pi)
+    np.apply_along_axis(apply_reshape, 1, evaluated_fourier)
 
 
 class DiscreteNormalizedActions(gym.ActionWrapper):
