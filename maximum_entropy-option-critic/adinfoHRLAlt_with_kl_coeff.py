@@ -8,38 +8,76 @@ from scipy.stats import multivariate_normal
 #import roboschool
 import argparse
 import pprint as pp
+from sklearn.cluster import KMeans
+
 import pybullet_envs
 from gym import wrappers
 
+
+
+use_cuda = torch.cuda.is_available()
+use_cuda = False #torch.cuda.is_available()
+
+if use_cuda:
+
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+device = torch.device("cuda" if use_cuda else "cpu")
+np.random.seed(1)
+torch.manual_seed(1)
 def tensor(x):
     if isinstance(x, torch.Tensor):
         return x.to(device).float()
     x = torch.tensor(x, device=device)
     return x.to(device).float()
 
+def target_distribution(q,options_cnt):
+    weight = q**2/torch.sum(q,0)
+    target_dist = (weight.t()/torch.sum(weight,1)).t()
+    assert(target_dist.shape[1]==options_cnt)
+    return target_dist
 
-def update_option(env, args, agent, replay_buffer_onpolicy, action_noise, update_num,index=None):
+def get_target_q_and_predicted_v_value(agent,action_noise,state,action,next_state,reward,done):
+    next_option, _, Q_predict = agent.softmax_option_target(next_state)
+
+    noise_clip = 0.5
+    noise = torch.clamp(Normal(0, action_noise).sample((next_option.shape[0], agent.action_dim)) + action_noise,
+                        -noise_clip, noise_clip)
+    next_action, log_prob = agent.predict_actor(next_state, next_option, target=True)
+    next_action = next_action + noise
+
+    next_action = next_action.detach()
+
+    next_action = torch.max(torch.min(next_action, agent.action_bound), -agent.action_bound)
+
+    target_Q1, target_Q2 = agent.predict_critic_target(next_state, next_action)
+
+    target_q = torch.min(target_Q1, target_Q2) - agent.entropy_lr * log_prob
+    done = done.reshape(-1, 1)
+
+    y_i = reward + agent.gamma * (1 - done) * target_q.reshape(-1, 1)
+    # assert(y_i.shape[1]==1)
+    predicted_v_i = agent.value_func(state)
+
+    return y_i, predicted_v_i
+
+
+
+
+def update_option(env, args, agent, replay_buffer_onpolicy, action_noise, update_num):
     for ite in range(update_num):
-        state, action, reward, next_state, done, p_batch = replay_buffer_onpolicy.sample(
-        len(replay_buffer_onpolicy))
+        state, action, mean, log_std, reward, next_state, done, p_batch = replay_buffer_onpolicy.sample(
+        args["option_minibatch_size"])
 
 
-        state = tensor(state).to(device)
-        action = tensor(action).to(device)
-        next_state = tensor(next_state).to(device)
-
-        reward = tensor(reward).unsqueeze(1).to(device)
-        done = tensor(np.float32(done)).unsqueeze(1).to(device)
-        p_batch = tensor(p_batch).unsqueeze(1).to(device)
+        state, action, mean, log_std, next_state, reward, done, p_batch = get_tensor_batch(state, action, mean, log_std, reward, next_state, done, p_batch)
 
 
-        # import time
-        #
-        #
-        # start = time.time()
-        # next_option , _ , Q_predict = agent.softmax_option_target(next_state)
-        #
-        #
+        import time
+
+
+        start = time.time()
+
+
         # noise_clip = 0.5
         # noise_clip = 0.5
         # noise = torch.clamp(Normal(0,action_noise).sample((next_option.shape[0] , agent.action_dim)) + action_noise,-noise_clip,noise_clip)
@@ -53,24 +91,88 @@ def update_option(env, args, agent, replay_buffer_onpolicy, action_noise, update
         #
         # target_Q1, target_Q2 = agent.predict_critic_target(next_state, next_action)
         #
-        # target_q = torch.min(target_Q1, target_Q2) - 0.01* log_prob
+        # target_q = torch.min(target_Q1, target_Q2) - agent.entropy_lr* log_prob
         # done = done.reshape(-1,1)
         #
         # y_i = reward + agent.gamma * (1-done)* target_q.reshape(-1,1)
+        # #assert(y_i.shape[1]==1)
         # predicted_v_i = agent.value_func(state)
-        #
-        # assert(y_i.shape[0]==state.shape[0] and y_i.shape[1]==1)
-        # assert (predicted_v_i.shape[0] == state.shape[0] and predicted_v_i.shape[1] == 1)
-        #
-        #
+        y_i, predicted_v_i = get_target_q_and_predicted_v_value(agent,action_noise,state,action,next_state,reward,done)
+
+        #assert(y_i.shape[0]==state.shape[0] and y_i.shape[1]==1)
+        #assert (predicted_v_i.shape[0] == state.shape[0] and predicted_v_i.shape[1] == 1)
+
+        #print(ite)
+
+
 
         for option_idx in range(args["option_ite"]):
 
-            agent.train_option_kmeans(state,action,index)
-            break
-        break
-        import time
+            agent.train_option_autoencoder_kmeansplus(state,action,mean, log_std, y_i,predicted_v_i,p_batch,ite)
+
         end = time.time()
+
+    state, action, mean, log_std, reward, next_state, done, p_batch = replay_buffer_onpolicy.sample(
+        len(replay_buffer_onpolicy))
+    state, action, mean, log_std, next_state, reward, done, p_batch = get_tensor_batch(state, action, mean, log_std, reward, next_state, done, p_batch)
+
+    enc_output, option_out, output_option_noise, dec_output, option_input_concat = agent.option_net(state, action ,mean, log_std)
+
+    y_i, predicted_v_i = get_target_q_and_predicted_v_value(agent,action_noise,state,action,next_state,reward,done)
+
+    Advantage = (y_i - predicted_v_i).detach()
+    Weight = torch.exp(Advantage - torch.max(Advantage)) / p_batch.reshape(-1, 1)
+    W_norm = Weight / (torch.mean(Weight)+1e-20) # TODO
+
+    centers = agent.option_net.get_centers()
+    print("start")
+    print(centers)
+    flag=False
+    if agent.option_net.cluster_set==True:
+        km = KMeans(n_clusters=agent.options_cnt, init=centers, max_iter=15000, n_init=1)
+        flag=True
+    else:
+        km = KMeans(n_clusters=agent.options_cnt, max_iter=15000, n_init=1)
+    print(W_norm.shape)
+
+    km.fit(enc_output.detach().cpu().numpy())
+    print(km.cluster_centers_)
+
+
+
+    #kmeans = Kmeans(enc_output, agent.options_cnt, c=centers)
+    agent.option_net.set_centers(km.cluster_centers_)
+
+    prev_loss=None
+    ite=0
+
+    while ite in range(int(update_num/10)) and flag==True:
+        state, action, mean, log_std, reward, next_state, done, p_batch = replay_buffer_onpolicy.sample(
+            args["option_minibatch_size"]*20)
+        state = tensor(state).to(device)
+        action = tensor(action).to(device)
+        mean = tensor(mean).to(device)
+
+        log_std = tensor(log_std).to(device)
+
+        enc_output, option_out, output_option_noise, dec_output, option_input_concat = agent.option_net(state,action, mean,log_std)
+
+        p = target_distribution(option_out,agent.options_cnt)
+        kl_loss = kl_divergence(p,option_out)
+        kl_loss = torch.sum(kl_loss)
+
+        agent.option_optimizer.zero_grad()
+        #print(kl_loss)
+        if(prev_loss is not None and torch.abs(prev_loss- kl_loss)/torch.abs(prev_loss)< 1e-3):
+            break
+        prev_loss=kl_loss
+        assert(torch.isnan(kl_loss)==False)
+        kl_loss.backward()
+
+
+        torch.nn.utils.clip_grad_norm_(agent.option_net.parameters(), 50)
+        agent.option_optimizer.step()
+        ite+=1
         #print("softmax option target ")
         #print(end - start)
 
@@ -86,7 +188,7 @@ def update_policy(env, args, agent, replay_buffer, action_noise, update_num):
     print(update_num)
 
     for ite in range(update_num):
-        state, action, reward, next_state, done, p_batch = replay_buffer.sample(
+        state, action, mean, log_std, reward, next_state, done, p_batch = replay_buffer.sample(
             args["minibatch_size"])
 
         state = tensor(state).to(device)
@@ -109,7 +211,7 @@ def update_policy(env, args, agent, replay_buffer, action_noise, update_num):
         target_Q1, target_Q2 = agent.predict_critic_target(next_state, next_action)
 
 
-        target_q = torch.min(target_Q1, target_Q2).detach() -0.01* log_prob
+        target_q = torch.min(target_Q1, target_Q2).detach() -agent.entropy_lr* log_prob
 
         y_i = reward + agent.gamma * (1-done)*target_q.reshape(-1, 1)
         predicted_v_i = agent.value_func(state)
@@ -120,39 +222,41 @@ def update_policy(env, args, agent, replay_buffer, action_noise, update_num):
 
 
         if ite % int(args["policy_freq"]) == 0:
-            state, action, reward, next_state, done, p_batch = replay_buffer.sample(
+            state, action, mean, log_std, reward,  next_state, done, p_batch = replay_buffer.sample(
                 args["policy_minibatch_size"])
             state = tensor(state).to(device)
             action = tensor(action).to(device)
+            mean = tensor(mean).to(device)
+            log_std = tensor(log_std).to(device)
+
             next_state = tensor(next_state).to(device)
 
             reward = tensor(reward).unsqueeze(1).to(device)
             done = tensor(np.float32(done)).unsqueeze(1).to(device)
             p_batch = tensor(p_batch).unsqueeze(1).to(device)
 
-            option_estimated = agent.predict_option_kmeans(state, action)
-            #option_estimated = option_estimated.reshape(args["policy_minibatch_size"],agent.options_cnt)
-            #max_indx = torch.argmax(option_estimated,-1)
-            print(option_estimated)
-            max_indx = option_estimated.flatten()
+            option_estimated = agent.predict_option(state, action, mean, log_std)
+            option_estimated = option_estimated.reshape(args["policy_minibatch_size"],agent.options_cnt)
+            max_indx = torch.argmax(option_estimated,-1)
 
             for o in range(agent.options_cnt):
                 indx_o = (max_indx==o)
                 s_batch_o = state[indx_o, :]
                 # print('s_batch_o.shape', s_batch_o.shape)
-                a_outs, log_prob = agent.predict_actor_option(s_batch_o, o)
 
                 #grads = agent.action_gradients(s_batch_o, a_outs)
-                if a_outs.shape[0]!=0:
+                if s_batch_o.shape[0]!=0:
+                    a_outs, log_prob, mean, log_std = agent.predict_actor_option(s_batch_o, o)
+
                     critic_out_Q1, critic_out_Q2 = agent.critic_net(s_batch_o,a_outs)
-                    agent.train_actor_option(critic_out_Q1 - 0.01*log_prob, o)
+                    agent.train_actor_option(critic_out_Q1 - agent.entropy_lr*log_prob, o)
 
             agent.update_targets()
 
 
-def evaluate_deterministic_policy(agent,args,return_test,test_iter):
+def evaluate_deterministic_policy(agent,args,return_test,test_iter,env_test):
     print(agent.env_name)
-    env_test = gym.make(agent.env_name)
+    #env_test = gym.make(agent.env_name)
     for nn in range(int(agent.test_num)):
 
         state_test = env_test.reset()
@@ -161,16 +265,15 @@ def evaluate_deterministic_policy(agent,args,return_test,test_iter):
         option_test = []
         for t_test in range(int(agent.max_episode_len)):
             if t_test % int(args["temporal_num"]) == 0 or len(option_test) == 0:
-                #option_test, _, _ = agent.max_option(state_test)
-                #option_test, _, Q_predict = agent.softmax_option_target(state_test)
-                option_test, _, _ = agent.max_option(state_test)
-                #option, _, Q_predict = agent.softmax_option_target(state_test)
-                #option = option[0, 0]
+
+
+                option_test, q_max, q_predict = agent.max_option(state_test)
+                #option_test=option_test[0]
                 print(option_test)
 
                 # print(state_test)
 
-            action_test, log_prob_test = agent.predict_actor_option(state_test, option_test[0])
+            action_test, log_prob_test, mean_test, log_std_test = agent.predict_actor_option(state_test, option_test[0])
 
             #print(action_test)
 
@@ -228,6 +331,7 @@ def train(args, agent):
     policy_ite=0
     option_ite = 0
     env = gym.make(agent.env_name)
+    env_test = gym.make(agent.env_name)
 
     while total_step_cnt in range(args["total_step_num"]):
 
@@ -247,6 +351,8 @@ def train(args, agent):
             if total_step_cnt < 1e4:
                 action = env.action_space.sample()
                 action = action.reshape(1,-1)
+                mean = action
+                log_std = np.ones(mean.shape)
                 p = 1
             else:
                 if j % args["temporal_num"] == 0 or not np.isscalar(option):
@@ -255,25 +361,27 @@ def train(args, agent):
                     #print(option)
 
 
-
-                action, log_prob = agent.predict_actor_option(state.unsqueeze(0), option)
+                action, log_prob, mean, log_std = agent.predict_actor_option(state.unsqueeze(0), option)
 
                 noise = Normal(0, action_noise).sample(env.action_space.shape)
                 p_noise = multivariate_normal.pdf(noise, np.zeros(shape=env.action_space.shape[0]), action_noise*action_noise*torch.eye(noise.shape[0]))
                 action = torch.max(torch.min(action, tensor(env.action_space.high)), tensor(env.action_space.low))
 
-                p = tensor(p_noise) * softmax(Q_predict.detach())[0][option]
+                p = (tensor(p_noise) * softmax(Q_predict.detach())[0][option]).cpu().numpy()
 
                 action = action.detach().cpu().numpy()
+                mean = mean.detach().cpu().numpy()
+                log_std = log_std.detach().cpu().numpy()
             state2, reward, terminal, info = env.step(action[0])
             #state2 = tensor(state2).unsqueeze(0)
             state2 = tensor(state2)
 
-            replay_buffer.push(state, action.squeeze(0), reward,
-                            state2, terminal, p)
+            replay_buffer.push(state.cpu().numpy(), action.squeeze(0), mean.squeeze(0), log_std.squeeze(0), reward,
+                               state2.cpu().numpy(), terminal, p)
 
-            replay_buffer_onpolicy.push(state, action.squeeze(0), reward,
-                              state2, terminal, p)
+            replay_buffer_onpolicy.push(state.cpu().numpy(), action.squeeze(0), mean.squeeze(0), log_std.squeeze(0),
+                                        reward,
+                                        state2.cpu().numpy(), terminal, p)
 
             if j == int(args['max_episode_len']) - 1:
                 T_end = True
@@ -286,7 +394,7 @@ def train(args, agent):
             if total_step_cnt >= test_iter * int(args['sample_step_num']) or total_step_cnt == 1:
                 print('total_step_cnt', total_step_cnt)
                 print('evaluating the deterministic policy...')
-                evaluate_deterministic_policy(agent, args, return_test, test_iter)
+                evaluate_deterministic_policy(agent, args, return_test, test_iter,env_test)
 
                 print('return_test[{:d}] {:d}'.format(int(test_iter), int(return_test[test_iter])))
                 test_iter += 1
@@ -299,10 +407,10 @@ def train(args, agent):
                 except:
                     print("A model directory does not exist and cannot be created. The policy models are not saved")
 
-
-                #agent.save_model(iteration=test_iter, expname=result_name, model_path=model_path)
+                agent.save_weights(iteration=test_iter, expname=result_name, model_path=model_path)
                 agent.model_dir = model_path
-                agent.save_weights()
+                agent.load_weights()
+
                 print('Models saved.')
                 save_cnt += 1
 
@@ -317,7 +425,7 @@ def train(args, agent):
                 and total_step_cnt >= option_ite * args["option_batch_size"]:
             update_num = args["option_update_num"]
             print('update option', update_num)
-            update_option(env, args, agent, replay_buffer_onpolicy, action_noise, update_num,total_step_cnt)
+            update_option(env, args, agent, replay_buffer_onpolicy, action_noise, update_num)
             option_ite = option_ite + 1
             replay_buffer_onpolicy.clear()
 
@@ -410,6 +518,7 @@ def main(args):
 
 
 if __name__ == '__main__':
+    print("with_kl_coeff")
     parser = argparse.ArgumentParser(description='provide arguments for AdInfoHRLTD3 agent')
 
     parser.add_argument('--actor-lr', help='actor network learning rate', default=0.001)
@@ -422,9 +531,9 @@ if __name__ == '__main__':
     parser.add_argument('--minibatch-size', help='size of minibatch for minibatch-SGD', default=100)
     parser.add_argument('--policy-minibatch-size', help='batch for updating policy', default=400)
 
-    parser.add_argument('--option-batch-size', help='batch size for updating option', default=5000)
+    parser.add_argument('--option-batch-size', help='batch size for updating option', default=6000)
     parser.add_argument('--option-update-num', help='iteration for updating option', default=4000)
-    parser.add_argument('--option-minibatch-size', help='size of minibatch for minibatch-SGD', default=50)
+    parser.add_argument('--option-minibatch-size', help='size of minibatch for minibatch-SGD', default=100)
 
     parser.add_argument('--option-ite', help='batch size for updating policy', default=1)
 
@@ -438,7 +547,7 @@ if __name__ == '__main__':
     parser.add_argument('--hard-sample-assignment', help='False means soft assignment', default=True)
     parser.add_argument('--option-num', help='number of options', default=4)
 
-    parser.add_argument('--entropy_coeff', help='cofficient for the mutual information term', default=0.1)
+    parser.add_argument('--entropy_coeff', help='cofficient for the mutual information term', default=0.0) #0.1)
     parser.add_argument('--c-reg', help='cofficient for regularization term', default=1.0)
     parser.add_argument('--c-ent', help='cofficient for regularization term', default=4.0)
     parser.add_argument('--vat-noise', help='noise for vat in clustering', default=0.04)

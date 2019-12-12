@@ -1,6 +1,14 @@
 import torch
 import random
 import numpy as np
+
+use_cuda = torch.cuda.is_available()
+use_cuda = False #torch.cuda.is_available()
+np.random.seed(1)
+torch.manual_seed(1)
+if use_cuda:
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+device = torch.device("cuda" if use_cuda else "cpu")
 class ReplayBuffer:
     def __init__(self, capacity):
         self.capacity = capacity
@@ -39,24 +47,25 @@ class ReplayBufferWeighted:
         self.buffer = []
         self.position = 0
 
-    def push(self, state, action, reward, next_state, done,p):
+    def push(self, state, action, mean, log_std, reward, next_state, done,p):
         if len(self.buffer) < self.capacity:
             self.buffer.append(None)
         # else:
         #     return
         self.buffer[self.position] = (
-            state, action, reward, next_state, done,p)
+            state, action, mean, log_std, reward, next_state, done,p)
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, batch_size,flag=False):
+        batch_size= min(batch_size,len(self.buffer))
         batch = random.sample(self.buffer, batch_size)
         if flag==True:
             batch = self.buffer[0:batch_size]
         #batch = self.buffer[0:batch_size]
-        state, action, reward, next_state, done,p = map(
+        state, action,  mean, log_std, reward, next_state, done,p = map(
             np.stack, zip(*batch))
 
-        return state, action, reward, next_state, done,p
+        return state, action, mean, log_std, reward, next_state, done,p
 
     def clear(self):
         del self.buffer

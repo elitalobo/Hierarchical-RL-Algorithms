@@ -424,7 +424,7 @@ if __name__ == '__main__':
     parser.add_argument('--minibatch-size', help='size of minibatch for minibatch-SGD', default=100)
     parser.add_argument('--policy-minibatch-size', help='batch for updating policy', default=400)
 
-    parser.add_argument('--option-batch-size', help='batch size for updating option', default=5000)
+    parser.add_argument('--option-batch-size', help='batch size for updating option', default=6000)
     parser.add_argument('--option-update-num', help='iteration for updating option', default=4000)
     parser.add_argument('--option-minibatch-size', help='size of minibatch for minibatch-SGD', default=50)
 

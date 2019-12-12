@@ -8,6 +8,16 @@ try:
     import roboschool
 except:
     pass
+
+
+try:
+    import matplotlib
+
+
+    matplotlib.use('agg')
+    import matplotlib.pyplot as plt
+except:
+    pass
 import numpy as np
 import argparse
 # import matplotlib
@@ -17,6 +27,8 @@ from multiprocessing import Pool
 
 #matplotlib.use('agg')
 import torch.multiprocessing
+np.random.seed(1)
+torch.manual_seed(1)
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
 from datetime import datetime
@@ -75,10 +87,11 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Normal
 
-# torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
-use_cuda = torch.cuda.is_available()
-device = "cpu" #torch.device("cuda" if use_cuda else "cpu")
+use_cuda = False #torch.cuda.is_available()
+if use_cuda:
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+device = torch.device("cuda" if use_cuda else "cpu")
 from mpl_toolkits.mplot3d import Axes3D
 # import matplotlib.pyplot as plt
 
@@ -399,8 +412,144 @@ def squeeze_all(input):
 
     return next_state[0], reward[0], done[0], _
 
+from pykeops.torch import LazyTensor
+
+
+import time
+
+def Kmeans(x, K=10, Niter=10000, verbose=True,c=None):
+    N, D = x.shape  # Number of samples, dimension of the ambient space
+
+    # K-means loop:
+    # - x  is the point cloud,
+    # - cl is the vector of class labels
+    # - c  is the cloud of cluster centroids
+    start = time.time()
+    if c is None:
+        c = x[:K, :].clone()  # Simplistic random initialization
+    x_i = LazyTensor(x[:, None, :])  # (Npoints, 1, D)
+
+    for i in range(Niter):
+
+        c_j = LazyTensor(c[None, :, :])  # (1, Nclusters, D)
+        D_ij = ((x_i - c_j) ** 2).sum(-1)  # (Npoints, Nclusters) symbolic matrix of squared distances
+        cl = D_ij.argmin(dim=1).long().view(-1)  # Points -> Nearest cluster
+
+        Ncl = torch.bincount(cl) # Class weights
+        for d in range(D):  # Compute the cluster centroids with torch.bincount:
+            try:
+                c[:, d] = torch.bincount(cl, weights=x[:, d]) / Ncl.float()
+            except:
+                print("failed")
+                print(c.shape)
+                print(x.shape)
+                print(d)
+
+
+                c[:, d] = torch.bincount(cl, weights=x[:, d]) / Ncl.float()
+
+    end = time.time()
+
+    if verbose:
+        print("K-means example with {:,} points in dimension {:,}, K = {:,}:".format(N, D, K))
+        print('Timing for {} iterations: {:.5f}s = {} x {:.5f}s\n'.format(
+                Niter, end - start, Niter, (end-start) / Niter))
+
+    return cl, c
+
+def plot_points(points, options_actual, options_predicted, iter):
+    x_dir = points[:,0].detach().cpu().numpy()
+    y_dir = points[:,1].detach().cpu().numpy()
+    z_dir = points[:,2].detach().cpu().numpy()
+    plot_3d(x_dir,y_dir,z_dir, options_actual.flatten().detach().cpu().numpy(),"actual_"+str(iter))
+    plot_3d(x_dir,y_dir,z_dir, options_predicted.flatten().detach().cpu().numpy(),"predicted_"+str(iter))
 
 
 
 
 
+def plot_3d(x_dir, y_dir, z_dir, options, label=""):
+    from mpl_toolkits.mplot3d import Axes3D
+    colors = ['r','b','g','grey']
+
+    np.random.seed(19680801)
+
+
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+
+    for idx in range(4):
+        indices = options==idx
+        ax.scatter(x_dir[indices], y_dir[indices], z_dir[indices], marker='^')
+
+    ax.set_xlabel('X Label')
+    ax.set_ylabel('Y Label')
+    ax.set_zlabel('Z Label')
+
+    plt.savefig("plots/final"+ label+".png")
+    plt.clf()
+    plt.close()
+
+
+def sample_gumbel(shape, eps=1e-20):
+    unif = torch.rand(*shape).to(device)
+    g = -torch.log(-torch.log(unif + eps))
+    return g
+
+
+def sample_gumbel_softmax(logits, temperature):
+    """
+        Input:
+        logits: Tensor of log probs, shape = BS x k
+        temperature = scalar
+
+        Output: Tensor of values sampled from Gumbel softmax.
+                These will tend towards a one-hot representation in the limit of temp -> 0
+                shape = BS x k
+    """
+    g = sample_gumbel(logits.shape)
+    h = (g + logits) / temperature
+    h_max = h.max(dim=-1, keepdim=True)[0]
+    h = h - h_max
+    cache = torch.exp(h)
+    y = cache / cache.sum(dim=-1, keepdim=True)
+    return y
+
+
+def kl_divergence(p,q):
+    logpq = torch.log((p/(q+1e-20))+1e-20)
+    divergence = p*logpq
+    return torch.sum(divergence,-1)
+
+
+def kl_divergence_multivariate_gaussian(mean1, mean2, var1, var2):
+    #https: // stats.stackexchange.com / questions / 60680 / kl - divergence - between - two - multivariate - gaussians
+    covar1 = torch.diag(var1)
+    covar2 = torch.diag(var2)
+
+    sub1 = torch.log(torch.abs((torch.det(covar2)+1e-20)/(torch.det(covar1)+1e-20)))
+    covar2_inverse = torch.inverse(covar2)
+    sub2 = torch.trace(covar2_inverse*covar1)
+    mean_diff = (mean2-mean1).reshape(-1,1)
+    sub3 = torch.mm(torch.mm(mean_diff.t(),covar2_inverse),mean_diff)
+
+    kl = 0.5 *(sub1 + sub2 + sub3[0][0])
+    return kl
+
+
+def get_tensor_batch(state, action, mean, log_std, reward, next_state, done, p_batch):
+
+    state = tensor(state).to(device)
+    action = tensor(action).to(device)
+    mean = tensor(mean).to(device)
+
+    log_std = tensor(log_std).to(device)
+
+    next_state = tensor(next_state).to(device)
+
+    reward = tensor(reward).unsqueeze(1).to(device)
+    done = tensor(np.float32(done)).unsqueeze(1).to(device)
+    p_batch = tensor(p_batch).unsqueeze(1).to(device)
+    return state, action, mean, log_std, next_state, reward, done, p_batch
