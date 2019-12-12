@@ -16,16 +16,16 @@ python adInfoHRLAlt.py --env_name="HopperBulletEnv-v0" --options_cnt=4
 **Run soft-option-critic:** \
 python maximum_entropy-option-critic/adinfoHRLAlt_with_kl_coeff.py --env_name="HopperBulletEnv-v0" --options_cnt=4 
 
-![alt text](https://raw.githubusercontent.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/HalfCheetahBulletEnv-v0.png)
+![alt text](https://github.com//elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/HalfCheetahBulletEnv-v0.png)
 
-![alt text](https://raw.githubusercontent.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/HopperBulletEnv-v0.png)
+![alt text](https://github.com//elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/HopperBulletEnv-v0.png)
 
-![alt text](https://raw.githubusercontent.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/Walker2DBulletEnv-v0.png)
+![alt text](https://github.com//elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/Walker2DBulletEnv-v0.png)
 
-![alt text](https://raw.githubusercontent.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/oc-HalfCheetahBulletEnv-v0.png)
+![alt text](https://github.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/oc-HalfCheetahBulletEnv-v0.png)
 
-![alt text](https://raw.githubusercontent.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/oc-HopperBulletEnv-v0.png)
+![alt text](https://github.com//elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/oc-HopperBulletEnv-v0.png)
 
-![alt text](https://raw.githubusercontent.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/oc-Walker2DBulletEnv-v0.png)
+![alt text](https://github.com//elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/oc-Walker2DBulletEnv-v0.png)
 
 
