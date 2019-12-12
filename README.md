@@ -14,5 +14,5 @@ python hierarchical_dqn --env_name="HopperBulletEnv-v0" --options_cnt=4
 python adInfoHRLAlt.py --env_name="HopperBulletEnv-v0" --options_cnt=4 
 
 **Run soft-option-critic:** \
-python soc2_kmeans.py --env_name="HopperBulletEnv-v0" --options_cnt=4 
+python maximum_entropy-option-critic/adinfoHRLAlt_with_kl_coeff.py --env_name="HopperBulletEnv-v0" --options_cnt=4 
 
