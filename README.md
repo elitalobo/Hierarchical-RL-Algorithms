@@ -6,7 +6,7 @@ https://openreview.net/forum?id=Hyl_vjC5KQ \
 Credits: https://github.com/TakaOsa/adInfoHRL \
 Add soft-option critic which is an off-policy option-critic based on maximum entropy framework. Uses deep embedded clustering for clustering state-action space with ARC like feature representation for training different options. 
 
-Reference:
+
 {% bibliography --cited --file Hierarchical-Rl-Algorithms/bibliography.bib  %}
 
 Improved AdinfoHRL by adding replacing the deterministic option-policies with stochastic option-policies and changing the objective to maximize entropy in a constrained manner as done in soft-actor-critic. \
