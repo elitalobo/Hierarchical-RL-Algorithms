@@ -32,8 +32,8 @@ python maximum_entropy-option-critic/adinfoHRLAlt_with_kl_coeff.py --env_name="H
 
 
  `References`:
- [Learning Actionable Representations with Goal-Conditioned Policies](https://arxiv.org/pdf/1811.07819.pdf)
- [Unsupervised Deep Embedding for Clustering Analysis](https://arxiv.org/pdf/1511.06335.pdf)
- [Hierarchical Reinforcement Learning via Advantage-Weighted Information Maximization](https://openreview.net/forum?id=Hyl_vjC5KQ)
+ [Learning Actionable Representations with Goal-Conditioned Policies](https://arxiv.org/pdf/1811.07819.pdf) \\
+ [Unsupervised Deep Embedding for Clustering Analysis](https://arxiv.org/pdf/1511.06335.pdf) \\
+ [Hierarchical Reinforcement Learning via Advantage-Weighted Information Maximization](https://openreview.net/forum? id=Hyl_vjC5KQ) \\
  
 
