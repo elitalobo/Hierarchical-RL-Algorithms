@@ -30,6 +30,9 @@ python maximum_entropy-option-critic/adinfoHRLAlt_with_kl_coeff.py --env_name="H
 
 ![alt text](https://github.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/oc-Walker2DBulletEnv-v0.png)
 
+![alt text](https://github.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/HopperBulletEnv-v0_state-action.png)
+![alt text](https://github.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/HopperBulletEnv-v0_action_new.png)
+![alt text](https://github.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/HopperBulletEnv-v0_state_new.png)
 
  `References`:
  [Learning Actionable Representations with Goal-Conditioned Policies](https://arxiv.org/pdf/1811.07819.pdf) \
