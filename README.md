@@ -1,5 +1,7 @@
-# Hierarchical-RL-Algorithms
+My paper on Maximum-Entropy Option-Critic:
+[shorturl.at/bkoL9](https://github.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/soc_report.pdf)
 
+# Hierarchical-RL-Algorithms
 Implemented the following papers in pytorch for solving Roboschool tasks: \
 https://arxiv.org/pdf/1609.05140.pdf \
 https://openreview.net/forum?id=Hyl_vjC5KQ \
@@ -16,7 +18,7 @@ python hierarchical_dqn --env_name="HopperBulletEnv-v0" --options_cnt=4
 **Run adInfoHRL:** \
 python adInfoHRLAlt.py --env_name="HopperBulletEnv-v0" --options_cnt=4 
 
-**Run soft-option-critic:** \
+**Run maximum entropy option-critic:** \
 python maximum_entropy-option-critic/adinfoHRLAlt_with_kl_coeff.py --env_name="HopperBulletEnv-v0" --options_cnt=4 
 
 ![alt text](https://github.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/maximum_entropy-option-critic/HalfCheetahBulletEnv-v0.png)
