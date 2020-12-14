@@ -1,5 +1,5 @@
 My paper on Maximum-Entropy Option-Critic:
-[shorturl.at/bkoL9](https://github.com/elitalobo/Hierarchical-RL-Algorithms/blob/master/soc_report.pdf)
+[shorturl.at/bkoL9](https://drive.google.com/drive/folders/1u1ya2bddsguwhnHNpH3HPJ5aQHtRcEUS?usp=sharing)
 
 # Hierarchical-RL-Algorithms
 Implemented the following papers in pytorch for solving Roboschool tasks: \
